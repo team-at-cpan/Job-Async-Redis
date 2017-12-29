@@ -11,6 +11,32 @@ Job::Async::Redis - L<Net::Async::Redis> backend for L<Job::Async>
 
 =head1 SYNOPSIS
 
+ use IO::Async::Loop;
+ use Job::Async;
+ my $loop = IO::Async::Loop->new;
+ $loop->add( my $jobman = Job::Async->new );
+ my $client = $jobman->client(
+     redis => { uri => 'redis://127.0.0.1', }
+ );
+ my $worker = $jobman->worker(
+     redis => { uri => 'redis://127.0.0.1', }
+ );
+ Future->needs_all(
+     $client->start,
+ )->get;
+ 
+ $worker->jobs->each(sub {
+     $_->done('' . reverse $_->data('some_data'))
+ });
+ print Future->needs_all(
+  $client->start,
+  $worker->trigger
+ )->then(sub {
+  $client->submit(
+   some_data => 'reverse me please'
+  )->future
+ })->get;
+
 =head1 DESCRIPTION
 
 The system can be configured to select a performance/reliability tradeoff

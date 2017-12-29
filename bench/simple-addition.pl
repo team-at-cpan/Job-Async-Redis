@@ -2,8 +2,7 @@ use strict;
 use warnings;
 
 use Heap;
-use Job::Async::Worker::Redis;
-use Job::Async::Client::Redis;
+use Job::Async;
 use IO::Async::Loop;
 use Future::Utils qw(fmap0);
 
@@ -11,16 +10,18 @@ use Benchmark qw(timethis :hireswallclock);
 
 my $loop = IO::Async::Loop->new;
 $loop->add(
-    my $client = Job::Async::Client::Redis->new(
-        uri => 'redis://127.0.0.1',
+    my $jobman = Job::Async->new(
     )
 );
-$loop->add(
-    my $worker = Job::Async::Worker::Redis->new(
+my $client = $jobman->client(
+    redis => {
         uri => 'redis://127.0.0.1',
-        max_concurrent_jobs => 4,
-        timeout => 5
-    )
+    }
+);
+my $worker = $jobman->worker(
+    redis => {
+        uri => 'redis://127.0.0.1',
+    }
 );
 Future->needs_all(
     $client->start,
