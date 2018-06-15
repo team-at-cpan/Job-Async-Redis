@@ -19,6 +19,7 @@ Job::Async::Client::Redis - L<Net::Async::Redis> client implementation for L<Job
 
 =cut
 
+use Ryu::Async;
 use Job::Async::Utils;
 use Net::Async::Redis 1.003;
 
@@ -47,6 +48,9 @@ sub _add_to_loop {
             uri => $self->uri,
         )
     );
+    $self->add_child(
+        $self->{ryu} = Ryu::Async->new
+    );
 }
 
 =head2 client
@@ -66,6 +70,8 @@ sub subscriber { shift->{subscriber} }
 =cut
 
 sub submitter { shift->{submitter} }
+
+sub ryu { shift->{ryu} }
 
 sub queue { shift->{queue} //= 'pending' }
 
@@ -149,6 +155,13 @@ sub submit {
                 %{ $job->flattened_data }
             ),
             $tx->lpush($self->queue, $id)
+                ->on_done(sub {
+                    my ($count) = @_;
+                    local @{$log->{context}}{qw(client_id job_id)} = ($self->id, $id);
+                    $log->tracef('Job count for [%s] now %d', $self->queue, $count);
+                    $self->queue_length
+                        ->emit($count);
+                })
         )
     };
     ($self->use_multi
@@ -158,8 +171,14 @@ sub submit {
      ->retain
 }
 
-sub use_multi { shift->{use_multi} }
+sub queue_length {
+    my ($self) = @_;
+    $self->{queue_length} ||= $self->ryu->source(
+        label => 'Currently pending events for ' . $self->queue
+    );
+}
 
+sub use_multi { shift->{use_multi} }
 
 sub pending_job {
     my ($self, $id) = @_;
