@@ -134,6 +134,18 @@ sub start {
     $self->trigger;
 }
 
+sub stop {
+    my ($self) = @_;
+    $self->{stopping_future} ||= $self->loop->new_future;
+    my $pending = 0 + keys %{$self->{pending_jobs}};
+    if(!$pending && $self->{awaiting_job}) {
+        $self->{awaiting_job}->cancel;
+        $self->{stopping_future}->done;
+    }
+    # else, either a job is being processed, or there are pending ones. sub trigger will recheck
+    return $self->{stopping_future};
+}
+
 sub queue_redis {
     my ($self) = @_;
     unless($self->{queue_redis}) {
@@ -166,6 +178,10 @@ sub trigger {
     my $pending = 0 + keys %{$self->{pending_jobs}};
     $log->tracef('Trigger called with %d pending tasks, %d max', $pending, $self->max_concurrent_jobs);
     return if $pending >= $self->max_concurrent_jobs;
+    if(!$pending and $self->{stopping_future}) {
+        $self->{stopping_future}->done;
+        return;
+    }
     $log->tracef("Start awaiting task") unless $self->{awaiting_job};
     $self->{awaiting_job} //= $self->queue_redis->brpoplpush(
         $queue => $self->processing_queue, 0
