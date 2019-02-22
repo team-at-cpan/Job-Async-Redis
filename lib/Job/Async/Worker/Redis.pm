@@ -134,6 +134,15 @@ sub start {
     $self->trigger;
 }
 
+=head2 stop
+
+Requests to stop processing.
+
+Returns a future which will complete when all currently-processing jobs have
+finished.
+
+=cut
+
 sub stop {
     my ($self) = @_;
     $self->{stopping_future} ||= $self->loop->new_future;
