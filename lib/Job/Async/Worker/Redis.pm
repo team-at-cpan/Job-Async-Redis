@@ -148,10 +148,14 @@ sub stop {
     $self->{stopping_future} ||= $self->loop->new_future;
     my $pending = 0 + keys %{$self->{pending_jobs}};
     if(!$pending && $self->{awaiting_job}) {
+        # This will ->cancel a Net::Async::Redis future. Currently that's just
+        # ignored to no great effect, but it would be nice sometime to do
+        # something useful with that.
         $self->{awaiting_job}->cancel;
         $self->{stopping_future}->done;
     }
-    # else, either a job is being processed, or there are pending ones. sub trigger will recheck
+    # else, either a job is being processed, or there are pending ones.
+    # sub trigger will recheck
     return $self->{stopping_future};
 }
 
