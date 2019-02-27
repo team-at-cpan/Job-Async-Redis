@@ -73,6 +73,13 @@ sub submitter { shift->{submitter} }
 
 sub ryu { shift->{ryu} }
 
+sub prefix { shift->{prefix} //= 'jobs' }
+
+sub prefixed_queue {
+    my ($self, $q) = @_;
+    return $q unless length(my $prefix = $self->prefix);
+    return join '::', $self->prefix, $q;
+}
 sub queue { shift->{queue} //= 'pending' }
 
 =head2 start
@@ -154,7 +161,7 @@ sub submit {
                 _reply_to => $self->id,
                 %{ $job->flattened_data }
             ),
-            $tx->lpush($self->queue, $id)
+            $tx->lpush($self->prefixed_queue($self->queue), $id)
                 ->on_done(sub {
                     my ($count) = @_;
                     local @{$log->{context}}{qw(client_id job_id)} = ($self->id, $id);
@@ -188,7 +195,7 @@ sub pending_job {
 
 sub configure {
     my ($self, %args) = @_;
-    for (qw(queue uri use_multi)) {
+    for (qw(queue uri use_multi prefix)) {
         $self->{$_} = delete $args{$_} if exists $args{$_};
     }
     $self->next::method(%args)
