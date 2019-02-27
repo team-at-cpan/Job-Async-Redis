@@ -3,7 +3,7 @@ requires 'curry', 0;
 requires 'Future', '>= 0.37';
 requires 'Log::Any', '>= 1.050';
 
-requires 'Job::Async', '>= 0.001';
+requires 'Job::Async', '>= 0.003';
 requires 'Net::Async::Redis', '>= 1.004';
 
 on 'test' => sub {
