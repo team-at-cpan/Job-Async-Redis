@@ -79,7 +79,7 @@ Job details are stored in a hash key, as with the C<recoverable> approach.
 When a worker starts on a job, the ID is atomically moved to an in-process queue,
 and this is used to track whether workers are still valid.
 
-Only one queue is allowed per worker, due to limitations of the 
+Only one queue is allowed per worker, due to limitations of the
 L<Net::Async::Redis::Commands/brpoplpush> implementation as described in
 L<this issue|https://github.com/antirez/redis/issues/1785>.
 
