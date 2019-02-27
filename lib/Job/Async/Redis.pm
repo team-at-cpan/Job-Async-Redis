@@ -24,7 +24,7 @@ Job::Async::Redis - L<Net::Async::Redis> backend for L<Job::Async>
  Future->needs_all(
      $client->start,
  )->get;
- 
+
  $worker->jobs->each(sub {
      $_->done('' . reverse $_->data('some_data'))
  });
