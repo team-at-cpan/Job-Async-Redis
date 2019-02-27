@@ -7,6 +7,7 @@ requires 'Job::Async', '>= 0.001';
 requires 'Net::Async::Redis', '>= 1.004';
 
 on 'test' => sub {
+    requires 'Log::Any::Adapter::TAP', 0;
     requires 'Test::More', '>= 0.98';
     requires 'Test::HexString', 0;
     requires 'Test::Deep', 0;
