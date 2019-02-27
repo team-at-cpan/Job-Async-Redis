@@ -46,7 +46,7 @@ workers using different modes. If it works, don't rely on it.
 
 =head2 Operational modes
 
-=head3 simple mode
+=head3 simple
 
 Jobs are submitted by serialising as JSON and pushing to a Redis list
 as a queue.
@@ -56,7 +56,7 @@ Workers retrieve jobs from queue, and send the results via pubsub.
 Multiple queues can be used for priority handling - the client can route
 based on the job data.
 
-=head2 recoverable mode
+=head2 recoverable
 
 As with simple mode, queues are used for communication between the
 clients and workers. However, these queues contain only the job ID.
@@ -69,7 +69,7 @@ notification, allowing clients to listen for completion.
 
 Multiple queues can be used, as with C<simple> mode.
 
-=head2 reliable mode
+=head2 reliable
 
 Each worker uses L<Net::Async::Redis::Commands/brpoplpush> to await job IDs
 posted to a single queue.
@@ -102,5 +102,5 @@ Tom Molesworth <TEAM@cpan.org>
 
 =head1 LICENSE
 
-Copyright Tom Molesworth 2016-2017. Licensed under the same terms as Perl itself.
+Copyright Tom Molesworth 2016-2019. Licensed under the same terms as Perl itself.
 
