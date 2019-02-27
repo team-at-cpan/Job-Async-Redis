@@ -56,7 +56,7 @@ Workers retrieve jobs from queue, and send the results via pubsub.
 Multiple queues can be used for priority handling - the client can route
 based on the job data.
 
-=head2 recoverable
+=head3 recoverable
 
 As with simple mode, queues are used for communication between the
 clients and workers. However, these queues contain only the job ID.
@@ -69,7 +69,7 @@ notification, allowing clients to listen for completion.
 
 Multiple queues can be used, as with C<simple> mode.
 
-=head2 reliable
+=head3 reliable
 
 Each worker uses L<Net::Async::Redis::Commands/brpoplpush> to await job IDs
 posted to a single queue.
