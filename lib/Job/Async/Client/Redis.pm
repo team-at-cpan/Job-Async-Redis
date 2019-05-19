@@ -19,6 +19,10 @@ Job::Async::Client::Redis - L<Net::Async::Redis> client implementation for L<Job
 
 =cut
 
+no indirect;
+
+use Syntax::Keyword::Try;
+use JSON::MaybeUTF8 qw(:v1);
 use Ryu::Async;
 use Job::Async::Utils;
 use Net::Async::Redis 1.003;
@@ -89,20 +93,25 @@ sub queue { shift->{queue} //= 'pending' }
 sub start {
     my ($self) = @_;
     local $log->{context}{client_id} = $self->id;
-    $log->tracef("Client awaiting Redis connections");
-    Future->wait_all(
-        $self->client->connect,
-        $self->submitter->connect,
-        $self->subscriber->connect
-    )->then(sub {
-        local $log->{context}{client_id} = $self->id;
-        $log->tracef("Subscribing to notifications");
-        return $self->subscriber
-            ->subscribe('client::' . $self->id)
-            ->on_done(
-                $self->curry::weak::on_subscribed
-            );
-    })
+    try {
+        $log->tracef("Client awaiting Redis connections via %s", '' . $self->uri);
+        return Future->wait_all(
+            $self->client->connect,
+            $self->submitter->connect,
+            $self->subscriber->connect
+        )->then(sub {
+            local $log->{context}{client_id} = $self->id;
+            $log->tracef("Subscribing to notifications");
+            return $self->subscriber
+                ->subscribe('client::' . $self->id)
+                ->on_done(
+                    $self->curry::weak::on_subscribed
+                );
+        })
+    } catch {
+        $log->errorf('Failed on connection setup - %s', $@);
+        die $@;
+    }
 }
 
 =head2 on_subscribed
