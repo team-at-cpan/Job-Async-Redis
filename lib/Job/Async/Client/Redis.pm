@@ -134,6 +134,8 @@ sub on_subscribed {
             ($job ? $client->hmget('job::' . $id, 'result')->then(sub {
                     local @{$log->{context}}{qw(client_id job_id)} = ($self->id, $id);
                     my ($result) = @{$_[0]};
+                    my $type = substr $result, 0, 1, '';
+                    $result = decode_json_utf8($result) if $type eq 'J';
                     $log->tracef('Job result %s', $result);
                     $job->done($result);
             }) : Future->done)->then(sub {

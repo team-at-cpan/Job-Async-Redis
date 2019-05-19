@@ -22,6 +22,7 @@ use Syntax::Keyword::Try;
 
 use Job::Async::Utils;
 use Future::Utils qw(repeat);
+use JSON::MaybeUTF8 qw(:v1);
 use Log::Any qw($log);
 
 use Net::Async::Redis;
@@ -67,12 +68,14 @@ sub on_job_received {
         Future::Utils::call {
             local @{$log->{context}}{qw(worker_id job_id queue)} = ($self->id, $id, $queue);
             my %data = @$items;
+            my $result = delete $data{result};
+            $log->tracef('Original job data is %s', \%data);
             $self->{pending_jobs}{$id} = my $job = Job::Async::Job->new(
                 data   => Job::Async::Job->structured_data(\%data),
                 id     => $id,
                 future => my $f = $self->loop->new_future,
             );
-            $log->tracef('Job content is %s', { %$job });
+            $log->tracef('Job content is %s', { map { $_ => $job->{$_} } qw(data id) });
             $f->on_done(sub {
                 my ($rslt) = @_;
                 local @{$log->{context}}{qw(worker_id job_id)} = ($self->id, $id);
@@ -84,7 +87,7 @@ sub on_job_received {
                         delete $self->{pending_jobs}{$id};
                         $log->tracef('Removing job from processing queue');
                         return Future->needs_all(
-                            $tx->hmset('job::' . $id, result => "$rslt"),
+                            $tx->hmset('job::' . $id, result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt),
                             $tx->publish('client::' . $data{_reply_to}, $id),
                             $tx->lrem($self->prefixed_queue($self->processing_queue) => 1, $id),
                         )
