@@ -166,7 +166,7 @@ sub submit {
     my $code = sub {
         my $tx = shift;
         my $id = $job->id // die 'no job ID?';
-        (
+        return Future->needs_all(
             $tx->hmset(
                 'job::' . $id,
                 _reply_to => $self->id,
@@ -180,11 +180,12 @@ sub submit {
                     $self->queue_length
                         ->emit($count);
                 })
-        )
+        );
     };
-    ($self->use_multi
-    ? $self->submitter->multi($code)
-    : Future->needs_all($code->($self->submitter))
+    return (
+        $self->use_multi
+        ? $self->submitter->multi($code)
+        : $code->($self->submitter)
     )->then(sub { $job->future })
      ->retain
 }
