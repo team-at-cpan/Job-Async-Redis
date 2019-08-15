@@ -40,6 +40,7 @@ use Future::Utils qw(fmap_void);
 use Log::Any qw($log);
 
 use Getopt::Long;
+use Pod::Usage;
 
 GetOptions(
     'l|log=s'      => \my $log_level,
