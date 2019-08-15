@@ -170,6 +170,7 @@ sub submit {
             $tx->hmset(
                 'job::' . $id,
                 _reply_to => $self->id,
+                _queued    => Time::HiRes::time(),
                 %{ $job->flattened_data }
             ),
             $tx->lpush($self->prefixed_queue($self->queue), $id)
