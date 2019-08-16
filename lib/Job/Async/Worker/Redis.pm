@@ -173,13 +173,8 @@ finished.
 
 sub stop {
     my ($self) = @_;
-    $self->{stopping_future} ||= $self->loop->new_future;
     my $pending = 0 + keys %{$self->{pending_jobs}};
     if(!$pending && $self->{awaiting_job}) {
-        # This will ->cancel a Net::Async::Redis future. Currently that's just
-        # ignored to no great effect, but it would be nice sometime to do
-        # something useful with that.
-        $self->{awaiting_job}->cancel;
         $self->{stopping_future}->done;
     }
     # else, either a job is being processed, or there are pending ones.
@@ -221,19 +216,18 @@ sub prefixed_queue {
 
 sub trigger {
     my ($self) = @_;
+    $self->{stopping_future} ||= $self->loop->new_future;
     local @{$log->{context}}{qw(worker_id queue)} = ($self->id, my ($queue) = $self->pending_queues);
     try {
         my $pending = 0 + keys %{$self->{pending_jobs}};
         $log->tracef('Trigger called with %d pending tasks, %d max', $pending, $self->max_concurrent_jobs);
         return if $pending >= $self->max_concurrent_jobs;
-        if(!$pending and $self->{stopping_future}) {
-            $self->{stopping_future}->done;
-            return;
-        }
+
         return $self->{awaiting_job} //= do {
             $log->debugf('Awaiting job on %s', $queue);
-            $self->queue_redis->brpoplpush(
-                $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue), 0
+            my $run_future = $self->queue_redis->brpoplpush(
+                $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue), 0);
+            Future->wait_any($run_future, $self->{stopping_future}->without_cancel
             )->on_ready(sub {
                 my $f = shift;
                 local @{$log->{context}}{qw(worker_id queue)} = ($self->id, $queue);
@@ -241,17 +235,19 @@ sub trigger {
                     $log->debugf('And we have an event on %s', $queue);
                     delete $self->{awaiting_job};
                     $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
-                    my ($id, $queue, @details) = $f->get;
-                    if($id) {
-                        $queue //= $queue;
-                        $self->incoming_job->emit([ $id, $queue ]);
-                    } else {
-                        $log->warnf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
+                    unless ($self->{stopping_future}->is_done) {
+                        my ($id, $queue, @details) = $f->get;
+                        if($id) {
+                            $queue //= $queue;
+                            $self->incoming_job->emit([ $id, $queue ]);
+                        } else {
+                            $log->warnf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
+                        }
                     }
                 } catch {
                     $log->errorf("Failed to retrieve and process job: %s", $@);
                 }
-                $self->loop->later($self->curry::weak::trigger);
+                $self->loop->later($self->curry::weak::trigger) unless $self->{stopping_future}->is_done;
             });
         };
     } catch {
