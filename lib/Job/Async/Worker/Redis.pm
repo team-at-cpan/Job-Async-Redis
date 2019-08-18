@@ -8,9 +8,13 @@ use parent qw(Job::Async::Worker);
 # VERSION
 
 =head1 NAME
+
 Job::Async::Worker::Redis - L<Net::Async::Redis> worker implementation for L<Job::Async::Worker>
+
 =head1 SYNOPSIS
+
 =head1 DESCRIPTION
+
 =cut
 
 use curry::weak;
@@ -25,7 +29,9 @@ use Log::Any qw($log);
 use Net::Async::Redis;
 
 =head2 incoming_job
+
 Source for jobs received from the C<< BRPOP(LPUSH) >> queue wait.
+
 =cut
 
 sub incoming_job {
@@ -39,7 +45,9 @@ sub incoming_job {
 }
 
 =head2 on_job_received
+
 Called for each job that's received.
+
 =cut
 
 async sub on_job_received {
@@ -121,19 +129,23 @@ sub use_multi { shift->{use_multi} }
 sub prefix { shift->{prefix} //= 'jobs' }
 
 =head2 pending_queues
+
 Note that L<reliable mode|Job::Async::Redis/reliable> only
 supports a single queue, and will fail if you attempt to start with multiple
 queues defined.
+
 =cut
 
 sub pending_queues { @{ shift->{pending_queues} ||= [qw(pending)] } }
 
 =head2 processing_queue
+
 =cut
 
 sub processing_queue { shift->{processing_queue} //= 'processing' }
 
 =head2 start
+
 =cut
 
 sub start {
@@ -143,9 +155,12 @@ sub start {
 }
 
 =head2 stop
+
 Requests to stop processing.
+
 Returns a future which will complete when all currently-processing jobs have
 finished.
+
 =cut
 
 sub stop {
@@ -260,6 +275,9 @@ sub configure {
 1;
 
 =head1 AUTHOR
+
 Tom Molesworth <TEAM@cpan.org>
+
 =head1 LICENSE
+
 Copyright Tom Molesworth 2016-2019. Licensed under the same terms as Perl itself.
