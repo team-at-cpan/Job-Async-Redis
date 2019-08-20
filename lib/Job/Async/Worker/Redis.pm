@@ -173,18 +173,18 @@ finished.
 
 sub stop {
     my ($self) = @_;
-    $self->{stopping_future} ||= $self->loop->new_future;
     my $pending = 0 + keys %{$self->{pending_jobs}};
     if(!$pending && $self->{awaiting_job}) {
-        # This will ->cancel a Net::Async::Redis future. Currently that's just
-        # ignored to no great effect, but it would be nice sometime to do
-        # something useful with that.
-        $self->{awaiting_job}->cancel;
-        $self->{stopping_future}->done;
+        return $self->stopping_future->done;
     }
     # else, either a job is being processed, or there are pending ones.
     # sub trigger will recheck
-    return $self->{stopping_future};
+    return $self->stopping_future;
+}
+
+sub stopping_future {
+    my ($self) = @_;
+    $self->{stopping_future} ||= $self->loop->new_future->set_label('Job::Async::Worker::Redis shutdown');
 }
 
 sub queue_redis {
@@ -226,33 +226,35 @@ sub trigger {
         my $pending = 0 + keys %{$self->{pending_jobs}};
         $log->tracef('Trigger called with %d pending tasks, %d max', $pending, $self->max_concurrent_jobs);
         return if $pending >= $self->max_concurrent_jobs;
-        if(!$pending and $self->{stopping_future}) {
-            $self->{stopping_future}->done;
-            return;
-        }
+
         return $self->{awaiting_job} //= do {
             $log->debugf('Awaiting job on %s', $queue);
-            $self->queue_redis->brpoplpush(
-                $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue), 0
-            )->on_ready(sub {
-                my $f = shift;
-                local @{$log->{context}}{qw(worker_id queue)} = ($self->id, $queue);
-                try {
-                    $log->debugf('And we have an event on %s', $queue);
-                    delete $self->{awaiting_job};
-                    $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
-                    my ($id, $queue, @details) = $f->get;
-                    if($id) {
-                        $queue //= $queue;
-                        $self->incoming_job->emit([ $id, $queue ]);
-                    } else {
-                        $log->warnf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
+            Future->wait_any(
+                $self->queue_redis->brpoplpush(
+                    $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue),
+                    $self->job_poll_interval
+                )->on_done(sub {
+                    my ($id, $queue, @details) = @_;
+                    try {
+                        $log->debugf('And we have an event on %s', $queue);
+                        delete $self->{awaiting_job};
+                        $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
+                        if($id) {
+                            $queue //= $queue;
+                            $self->incoming_job->emit([ $id, $queue ]);
+                        } else {
+                            $log->debugf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
+                        }
+                    } catch {
+                        $log->errorf("Failed to retrieve and process job: %s", $@);
                     }
-                } catch {
-                    $log->errorf("Failed to retrieve and process job: %s", $@);
-                }
-                $self->loop->later($self->curry::weak::trigger);
-            });
+                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_done;
+                })->on_fail(sub {
+                    my $failure = shift;
+                    $log->errorf("Failed to retrive job from redis: %s", $failure);
+                    }),
+                $self->stopping_future->without_cancel
+            );
         };
     } catch {
         $log->errorf('Failed to trigger job handling on %s - %s', $queue, $@);
@@ -260,13 +262,29 @@ sub trigger {
     return;
 }
 
+=head2 max_concurrent_jobs
+
+Number of jobs to process in parallel. Defaults to 1.
+
+=cut
+
 sub max_concurrent_jobs { shift->{max_concurrent_jobs} //= 1 }
+
+=head2 job_poll_interval
+
+Polling interval (e.g. for C<BRPOPLPUSH> in C<reliable> mode), in seconds.
+
+Defaults to 3 seconds.
+
+=cut
+
+sub job_poll_interval { shift->{job_poll_interval} //= 3 }
 
 sub uri { shift->{uri} }
 
 sub configure {
     my ($self, %args) = @_;
-    for my $k (qw(uri max_concurrent_jobs prefix mode processing_queue use_multi)) {
+    for my $k (qw(uri max_concurrent_jobs prefix mode processing_queue use_multi job_poll_interval)) {
         $self->{$k} = delete $args{$k} if exists $args{$k};
     }
 
