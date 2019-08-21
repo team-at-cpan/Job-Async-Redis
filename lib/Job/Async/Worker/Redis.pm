@@ -248,10 +248,11 @@ sub trigger {
                     } catch {
                         $log->errorf("Failed to retrieve and process job: %s", $@);
                     }
-                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_done;
+                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
+                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
             );
