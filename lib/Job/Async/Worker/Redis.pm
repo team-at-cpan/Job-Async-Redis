@@ -230,6 +230,7 @@ sub trigger {
         return $self->{awaiting_job} //= do {
             $log->debugf('Awaiting job on %s', $queue);
             Future->wait_any(
+                # If this is cancelled, we don't retrigger. Failure or success should retrigger as usual.
                 $self->queue_redis->brpoplpush(
                     $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue),
                     $self->job_poll_interval
@@ -238,9 +239,8 @@ sub trigger {
                     try {
                         $log->debugf('And we have an event on %s', $queue);
                         delete $self->{awaiting_job};
-                        $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
                         if($id) {
-                            $queue //= $queue;
+                            $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
                             $self->incoming_job->emit([ $id, $queue ]);
                         } else {
                             $log->debugf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
