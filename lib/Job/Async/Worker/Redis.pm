@@ -251,8 +251,8 @@ sub trigger {
                     $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_done;
                 })->on_fail(sub {
                     my $failure = shift;
-                    $log->errorf("Failed to retrive job from redis: %s", $failure);
-                    }),
+                    $log->errorf("Failed to retrieve job from redis: %s", $failure);
+                }),
                 $self->stopping_future->without_cancel
             );
         };
