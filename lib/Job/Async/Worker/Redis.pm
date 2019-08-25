@@ -67,10 +67,6 @@ async sub on_job_received {
         $log->debugf("Current job count is %d", $job_count);
         $self->trigger;
         my ($items) = await $self->redis->hgetall('job::' . $id);
-        $self->redis->hmset(
-            'job::' . $id,
-            _started => Time::HiRes::time()
-        )->retain;
         my %data = @$items;
         my $result = delete $data{result};
         $log->debugf('Original job data is %s', \%data);
@@ -90,11 +86,7 @@ async sub on_job_received {
                     delete $self->{pending_jobs}{$id};
                     $log->tracef('Removing job from processing queue');
                     return Future->needs_all(
-                        $tx->hmset(
-                            'job::' . $id,
-                            _processed => Time::HiRes::time(),
-                            result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt
-                        ),
+                        $tx->hmset('job::' . $id, result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt),
                         $tx->publish('client::' . $data{_reply_to}, $id),
                         $tx->lrem(
                             $self->prefixed_queue($self->processing_queue) => 1,
@@ -220,7 +212,7 @@ sub prefixed_queue {
 }
 
 sub trigger {
-     my ($self) = @_;
+    my ($self) = @_;
     local @{$log->{context}}{qw(worker_id queue)} = ($self->id, my ($queue) = $self->pending_queues);
     try {
         my $pending = 0 + keys %{$self->{pending_jobs}};
@@ -311,4 +303,3 @@ Tom Molesworth <TEAM@cpan.org>
 =head1 LICENSE
 
 Copyright Tom Molesworth 2016-2019. Licensed under the same terms as Perl itself.
-
