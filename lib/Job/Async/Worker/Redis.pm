@@ -220,7 +220,7 @@ sub prefixed_queue {
 }
 
 sub trigger {
-    my ($self) = @_;
+     my ($self) = @_;
     local @{$log->{context}}{qw(worker_id queue)} = ($self->id, my ($queue) = $self->pending_queues);
     try {
         my $pending = 0 + keys %{$self->{pending_jobs}};
@@ -231,10 +231,10 @@ sub trigger {
             $log->debugf('Awaiting job on %s', $queue);
             Future->wait_any(
                 # If this is cancelled, we don't retrigger. Failure or success should retrigger as usual.
-                $self->queue_redis->brpoplpush(
+                $self->queue_redis->connect->then( sub { $self->queue_redis->brpoplpush(
                     $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue),
                     $self->job_poll_interval
-                )->on_done(sub {
+                )})->on_done(sub {
                     my ($id, $queue, @details) = @_;
                     try {
                         $log->debugf('And we have an event on %s', $queue);
@@ -252,6 +252,8 @@ sub trigger {
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
+                    delete $self->{awaiting_job};
+                    $self->loop->delay_future( after => 1 )->get;
                     $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
