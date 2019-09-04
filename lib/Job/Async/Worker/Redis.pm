@@ -116,7 +116,7 @@ async sub on_job_received {
         });
         $f->on_ready($self->curry::weak::trigger);
 
-        if(my $timeout = $self->timeout_for($job)) {
+        if(my $timeout = $self->timeout) {
             Future->needs_any(
                 $f,
                 $self->loop->timeout_future(after => $timeout)->on_fail(sub {
@@ -275,19 +275,6 @@ Number of jobs to process in parallel. Defaults to 1.
 sub max_concurrent_jobs { shift->{max_concurrent_jobs} //= 1 }
 
 
-=head2 timeout_for
-
-Returns time to wait until job result is recieved, using a callback 
-assigned at worker initiation. Defaults to 0 (no timeout).
-
-=cut
-
-sub timeout_for { 
-    my ($self, $job) = @_;
-    return $self->{timeout_for}? $self->{timeout_for}->($job): 0; 
-}
-
-
 =head2 job_poll_interval
 
 Polling interval (e.g. for C<BRPOPLPUSH> in C<reliable> mode), in seconds.
@@ -302,7 +289,7 @@ sub uri { shift->{uri} }
 
 sub configure {
     my ($self, %args) = @_;
-    for my $k (qw(uri max_concurrent_jobs prefix mode processing_queue use_multi job_poll_interval timeout_for)) {
+    for my $k (qw(uri max_concurrent_jobs prefix mode processing_queue use_multi job_poll_interval)) {
         $self->{$k} = delete $args{$k} if exists $args{$k};
     }
 
