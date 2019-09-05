@@ -254,6 +254,9 @@ sub trigger {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
                     delete $self->{awaiting_job};
+                    delete $self->{redis};
+                    delete $self->{queue_redis};
+                    delete $self->{ryu};
                     $self->loop->delay_future( after => 1 )->get;
                     $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
                 }),
