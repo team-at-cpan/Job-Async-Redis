@@ -100,7 +100,7 @@ sub start {
     local $log->{context}{client_id} = $self->id;
     try {
         $log->tracef("Client awaiting Redis connections via %s", '' . $self->uri);
-        return Future->wait_all(
+        Future->wait_all(
             $self->client->connect,
             $self->submitter->connect,
             $self->subscriber->connect)->then(sub {
@@ -126,6 +126,8 @@ sub start {
         $log->errorf('Failed on connection setup - %s', $@);
         die $@;
     }
+
+    return $self->{startup_future};
 }
 
 =head2 on_subscribed
