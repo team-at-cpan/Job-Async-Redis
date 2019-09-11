@@ -2,6 +2,7 @@ requires 'parent', 0;
 requires 'curry', 0;
 requires 'Future', '>= 0.37';
 requires 'Log::Any', '>= 1.050';
+requires 'Syntax::Keyword::Try', '>= 0.04'; 
 
 requires 'Job::Async', '>= 0.004';
 requires 'Net::Async::Redis', '>= 2.000';
