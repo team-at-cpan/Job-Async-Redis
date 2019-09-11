@@ -28,6 +28,8 @@ use Log::Any qw($log);
 
 use Net::Async::Redis;
 
+use constant RECONNET_COOLDOWN => 1;
+
 =head2 incoming_job
 
 Source for jobs received from the C<< BRPOP(LPUSH) >> queue wait.
@@ -253,12 +255,14 @@ sub trigger {
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
+                    #$self->remove_child($self->{redis});
+                    #$self->remove_child($self->{queue_redis});
+                    #delete $self->{redis};
+                    #delete $self->{queue_redis};
                     delete $self->{awaiting_job};
-                    delete $self->{redis};
-                    delete $self->{queue_redis};
-                    delete $self->{ryu};
-                    $self->loop->delay_future( after => 1 )->get;
-                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
+                    $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
+                        $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
+                    })->retain;
                 }),
                 $self->stopping_future->without_cancel
             );
