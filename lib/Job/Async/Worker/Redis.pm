@@ -255,10 +255,6 @@ sub trigger {
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
-                    #$self->remove_child($self->{redis});
-                    #$self->remove_child($self->{queue_redis});
-                    #delete $self->{redis};
-                    #delete $self->{queue_redis};
                     delete $self->{awaiting_job};
                     $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
                         $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
