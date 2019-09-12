@@ -90,6 +90,12 @@ async sub on_job_received {
                     delete $self->{pending_jobs}{$id};
                     $log->tracef('Removing job from processing queue');
                     return Future->needs_all(
+                        map {
+                            $_->on_ready(sub {
+                                my $f = shift;
+                                $log->tracef('ready for %s - %s', $f->label, $f->state);
+                            });
+                        }
                         $tx->hmset(
                             'job::' . $id,
                             _processed => Time::HiRes::time(),
@@ -237,12 +243,12 @@ sub trigger {
                 )->on_done(sub {
                     my ($id, $queue, @details) = @_;
                     try {
-                        $log->debugf('And we have an event on %s', $queue);
+                        $log->tracef('And we have an event on %s', $queue);
                         if($id) {
                             $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
                             $self->incoming_job->emit([ $id, $queue ]);
                         } else {
-                            $log->debugf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
+                            $log->tracef('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
                         }
                     } catch {
                         $log->errorf("Failed to retrieve and process job: %s", $@);
