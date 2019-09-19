@@ -225,8 +225,6 @@ sub queue_length {
 
 sub use_multi { shift->{use_multi} }
 
-sub timeout { shift->{timeout} }
-
 sub pending_job {
     my ($self, $id) = @_;
     die 'no ID' unless defined $id;
@@ -235,7 +233,7 @@ sub pending_job {
 
 sub configure {
     my ($self, %args) = @_;
-    for (qw(queue uri use_multi prefix timeout)) {
+    for (qw(queue uri use_multi prefix)) {
         $self->{$_} = delete $args{$_} if exists $args{$_};
     }
     $self->next::method(%args)
