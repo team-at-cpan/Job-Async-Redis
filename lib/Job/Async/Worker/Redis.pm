@@ -25,6 +25,7 @@ use Job::Async::Utils;
 use Future::Utils qw(repeat);
 use JSON::MaybeUTF8 qw(:v1);
 use Log::Any qw($log);
+use Time::HiRes;
 
 use Net::Async::Redis;
 
@@ -76,6 +77,13 @@ async sub on_job_received {
         my %data = @$items;
         my $result = delete $data{result};
         $log->debugf('Original job data is %s', \%data);
+
+        if (exists $data{_expires} and ($data{_expires} <= Time::HiRes::time)) {
+            $log->errorf("Job already expired %s", $id);
+            await $self->queue_redis->del('job::' . $id);
+            die 'Expired job';
+        }
+
         $self->{pending_jobs}{$id} = my $job = Job::Async::Job->new(
             data   => Job::Async::Job->structured_data(\%data),
             id     => $id,

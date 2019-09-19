@@ -103,25 +103,24 @@ sub start {
         Future->wait_all(
             $self->client->connect,
             $self->submitter->connect,
-            $self->subscriber->connect)->then(sub {
-                local $log->{context}{client_id} = $self->id;
-                $log->tracef("Subscribing to notifications");
-                return $self->subscriber
-                    ->subscribe('client::' . $self->id)
-                    ->then(sub {
-                        $self->{startup_future}->done;
-                        return $self->on_subscribed(@_);
-                    })
-            })->else(
-                sub {
-                    my $error = shift;
-                    delete $self->{startup_future} unless $self->{startup_future}->is_ready;
+            $self->subscriber->connect
+        )->then(sub {
+            local $log->{context}{client_id} = $self->id;
+            $log->tracef("Subscribing to notifications");
 
-                    $log->warnf("queue client was failed with: %s", $error);
-                    $log->infof("try to reconnect after %s", $self->reconnect_delay);
-
-                    return $self->loop->delay_future(after => $self->reconnect_delay)->then($self->curry::weak::start);
-                })->retain();
+            return $self->subscriber
+                ->subscribe('client::' . $self->id)
+                ->then(sub {
+                    return $self->on_subscribed(@_);
+                })->else(sub {
+                    return Future->fail('Redis subscription failed');
+                });
+        })->else(sub {
+            my $error = shift;
+            delete $self->{startup_future}  unless $self->{startup_future}->is_ready;
+            $log->warnf("Queue client was failed with: %s. It will restart after %d seconds", $error, $self->reconnect_delay);
+            return $self->loop->delay_future(after => $self->reconnect_delay)->then($self->curry::weak::start);
+        })->retain();
     } catch {
         $log->errorf('Failed on connection setup - %s', $@);
         die $@;
@@ -138,6 +137,7 @@ sub on_subscribed {
     my ($self, $sub) = @_;
     local $log->{context}{client_id} = $self->id;
     $log->tracef("Redis connections established, starting client operations");
+    $self->{startup_future}->done;
     # Every time someone tells us they finished a job, we pull back the details
     # and check the results
     return $sub->events
@@ -168,6 +168,7 @@ sub on_subscribed {
 
 sub submit {
     my $self = shift;
+    my $expires;
 
     return Future->fail('Failed to submit a job. Queue client is not started yet.') unless $self->startup_future;
 
@@ -176,21 +177,25 @@ sub submit {
     my $job = (@_ == 1)
         ? shift
         : do {
+            my %data = @_;
+            $expires = delete $data{expires};
             Job::Async::Job->new(
                 future => $self->loop->new_future,
                 id => Job::Async::Utils::uuid(),
-                data => { @_ },
+                data => \%data,
             );
         };
     $self->{pending_job}{$job->id} = $job;
     my $code = sub {
         my $tx = shift;
         my $id = $job->id // die 'no job ID?';
+
         return Future->needs_all(
             $tx->hmset(
                 'job::' . $id,
                 _reply_to => $self->id,
                 _queued    => Time::HiRes::time(),
+                $expires? (_expires   => $expires): (),
                 %{ $job->flattened_data }
             ),
             $tx->lpush($self->prefixed_queue($self->queue), $id)
@@ -203,11 +208,11 @@ sub submit {
                 })
         );
     };
-    return (
+    return $self->submitter->connect->then(sub {
         $self->use_multi
         ? $self->submitter->multi($code)
         : $code->($self->submitter)
-    )->then(sub { $job->future })
+    })->then(sub { $job->future })
      ->retain;
 }
 
@@ -220,6 +225,8 @@ sub queue_length {
 
 sub use_multi { shift->{use_multi} }
 
+sub timeout { shift->{timeout} }
+
 sub pending_job {
     my ($self, $id) = @_;
     die 'no ID' unless defined $id;
@@ -228,7 +235,7 @@ sub pending_job {
 
 sub configure {
     my ($self, %args) = @_;
-    for (qw(queue uri use_multi prefix)) {
+    for (qw(queue uri use_multi prefix timeout)) {
         $self->{$_} = delete $args{$_} if exists $args{$_};
     }
     $self->next::method(%args)
