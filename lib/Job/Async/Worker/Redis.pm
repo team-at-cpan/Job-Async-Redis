@@ -25,7 +25,6 @@ use Job::Async::Utils;
 use Future::Utils qw(repeat);
 use JSON::MaybeUTF8 qw(:v1);
 use Log::Any qw($log);
-use Time::HiRes;
 
 use Net::Async::Redis;
 
