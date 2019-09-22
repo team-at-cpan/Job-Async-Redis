@@ -247,7 +247,6 @@ sub trigger {
                     my ($id, $queue, @details) = @_;
                     try {
                         $log->debugf('And we have an event on %s', $queue);
-                        delete $self->{awaiting_job};
                         if($id) {
                             $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
                             $self->incoming_job->emit([ $id, $queue ]);
@@ -261,13 +260,14 @@ sub trigger {
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
-                    delete $self->{awaiting_job};
                     $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
                         $self->loop->later($self->curry::weak::trigger);
                     })->retain unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
-            );
+            )->on_ready(sub {
+                delete $self->{awaiting_job};
+            });;
         };
     } catch {
         $log->errorf('Failed to trigger job handling on %s - %s', $queue, $@);
