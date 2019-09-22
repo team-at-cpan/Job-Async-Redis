@@ -77,12 +77,6 @@ async sub on_job_received {
         my $result = delete $data{result};
         $log->debugf('Original job data is %s', \%data);
 
-        if (exists $data{_expires} and ($data{_expires} <= Time::HiRes::time)) {
-            $log->errorf("Job already expired %s", $id);
-            await $self->queue_redis->del('job::' . $id);
-            die 'Expired job';
-        }
-
         $self->{pending_jobs}{$id} = my $job = Job::Async::Job->new(
             data   => Job::Async::Job->structured_data(\%data),
             id     => $id,
@@ -99,6 +93,12 @@ async sub on_job_received {
                     delete $self->{pending_jobs}{$id};
                     $log->tracef('Removing job from processing queue');
                     return Future->needs_all(
+                        map {
+                            $_->on_ready(sub {
+                                my $f = shift;
+                                $log->tracef('ready for %s - %s', $f->label, $f->state);
+                            });
+                        }
                         $tx->hmset(
                             'job::' . $id,
                             _processed => Time::HiRes::time(),
@@ -122,6 +122,10 @@ async sub on_job_received {
             )->on_ready($self->curry::weak::trigger)
               ->on_fail(sub { $log->errorf('Failed to update Redis status for job %s - %s', $id, shift); })
               ->retain;
+        });
+        $f->on_cancel(sub {
+            $log->debugf("Job was cancelled %s", $id);
+            $self->queue_redis->del('job::' . $id)->retain;
         });
         $f->on_ready($self->curry::weak::trigger);
 
