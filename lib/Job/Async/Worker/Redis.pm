@@ -119,13 +119,8 @@ async sub on_job_received {
                 $self->use_multi
                 ? $self->redis->multi($code)
                 : $code->($self->redis)
-            )->on_ready($self->curry::weak::trigger)
-              ->on_fail(sub { $log->errorf('Failed to update Redis status for job %s - %s', $id, shift); })
+            )->on_fail(sub { $log->errorf('Failed to update Redis status for job %s - %s', $id, shift); })
               ->retain;
-        });
-        $f->on_cancel(sub {
-            $log->debugf("Job was cancelled %s", $id);
-            $self->queue_redis->del('job::' . $id)->retain;
         });
         $f->on_ready($self->curry::weak::trigger);
 
@@ -268,8 +263,8 @@ sub trigger {
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
                     delete $self->{awaiting_job};
                     $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
-                        $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
-                    })->retain;
+                        $self->loop->later($self->curry::weak::trigger);
+                    })->retain unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
             );
