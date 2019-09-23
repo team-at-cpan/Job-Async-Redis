@@ -82,7 +82,7 @@ async sub on_job_received {
             id     => $id,
             future => my $f = $self->loop->new_future,
         );
-
+    
         $log->debugf('Job content is %s', { map { $_ => $job->{$_} } qw(data id) });
         $f->on_done(sub {
             my ($rslt) = @_;
@@ -92,23 +92,36 @@ async sub on_job_received {
                 try {
                     delete $self->{pending_jobs}{$id};
                     $log->tracef('Removing job from processing queue');
+                    my $expired = $job->data('_expires') && ($job->data('_expires') <= Time::HiRes::time());
+                    my @tasks = ( 
+                        $tx->lrem(
+                            $self->prefixed_queue($self->processing_queue) => 1,
+                            $id
+                        ),
+                    );
+                    
+                    if ($expired){
+                        push @tasks, $tx->del('job::' . $id)
+                    }
+                    else {
+                        push @tasks, 
+                            (
+                			    $tx->hmset(
+                                    'job::' . $id,
+                                    _processed => Time::HiRes::time(),
+                                    result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt
+                                ),
+                                $tx->publish('client::' . $data{_reply_to}, $id),
+                    		);
+                    };
+
                     return Future->needs_all(
                         map {
                             $_->on_ready(sub {
                                 my $f = shift;
                                 $log->tracef('ready for %s - %s', $f->label, $f->state);
                             });
-                        }
-                        $tx->hmset(
-                            'job::' . $id,
-                            _processed => Time::HiRes::time(),
-                            result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt
-                        ),
-                        $tx->publish('client::' . $data{_reply_to}, $id),
-                        $tx->lrem(
-                            $self->prefixed_queue($self->processing_queue) => 1,
-                            $id
-                        ),
+                        } @tasks
                     )
                 } catch {
                     $log->errorf("Failed due to %s", $@);
