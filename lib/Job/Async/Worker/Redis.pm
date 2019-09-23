@@ -246,12 +246,12 @@ sub trigger {
                 )})->on_done(sub {
                     my ($id, $queue, @details) = @_;
                     try {
-                        $log->debugf('And we have an event on %s', $queue);
+                        $log->tracef('And we have an event on %s', $queue);
                         if($id) {
                             $log->tracef('Had task from queue, pending now %d', 0 + keys %{$self->{pending_jobs}});
                             $self->incoming_job->emit([ $id, $queue ]);
                         } else {
-                            $log->debugf('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
+                            $log->tracef('No ID, full details were %s - maybe timeout?', join ' ', $id // (), $queue // (), @details);
                         }
                     } catch {
                         $log->errorf("Failed to retrieve and process job: %s", $@);
@@ -267,7 +267,7 @@ sub trigger {
                 $self->stopping_future->without_cancel
             )->on_ready(sub {
                 delete $self->{awaiting_job};
-            });;
+            });
         };
     } catch {
         $log->errorf('Failed to trigger job handling on %s - %s', $queue, $@);
