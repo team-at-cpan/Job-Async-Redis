@@ -92,15 +92,16 @@ async sub on_job_received {
                 try {
                     delete $self->{pending_jobs}{$id};
                     $log->tracef('Removing job from processing queue');
-                    my $expired = $job->data('_expires') && ($job->data('_expires') <= Time::HiRes::time());
+
                     my @tasks = ( 
                         $tx->lrem(
                             $self->prefixed_queue($self->processing_queue) => 1,
                             $id
                         ),
                     );
-                    
-                    if ($expired){
+
+                    if ($job->data('_expires') && ($job->data('_expires') <= Time::HiRes::time())){
+                        # job is already expired on client side. So no one is waiting for the response.
                         push @tasks, $tx->del('job::' . $id)
                     }
                     else {
