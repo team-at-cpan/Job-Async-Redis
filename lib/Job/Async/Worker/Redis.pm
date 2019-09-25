@@ -36,22 +36,6 @@ Source for jobs received from the C<< BRPOP(LPUSH) >> queue wait.
 
 =cut
 
-sub incoming_job {
-    my ($self) = @_;
-    $self->{incoming_job} //= do {
-        die 'needs to be part of a loop' unless $self->loop;
-        my $src = $self->ryu->source;
-        $src->map($self->curry::weak::on_job_received)->map('retain')->retain;
-        $src
-    }
-}
-
-=head2 on_job_received
-
-Called for each job that's received.
-
-=cut
-
 async sub on_job_received {
     my ($self, $id) = (shift, @$_);
     try {
@@ -270,17 +254,16 @@ sub trigger {
                     } catch {
                         $log->errorf("Failed to retrieve and process job: %s", $@);
                     }
-                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
-                    $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
-                        $self->loop->later($self->curry::weak::trigger);
-                    })->retain unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
             )->on_ready(sub {
+                my $f = shift;
+                $self->loop->delay_future( after => RECONNET_COOLDOWN )->get if $f->is_failed;
                 delete $self->{awaiting_job};
+                $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
             });
         };
     } catch {
