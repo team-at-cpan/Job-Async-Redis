@@ -76,13 +76,12 @@ async sub on_job_received {
         my %data = @$items;
         my $result = delete $data{result};
         $log->debugf('Original job data is %s', \%data);
-
         $self->{pending_jobs}{$id} = my $job = Job::Async::Job->new(
             data   => Job::Async::Job->structured_data(\%data),
             id     => $id,
             future => my $f = $self->loop->new_future,
         );
-    
+
         $log->debugf('Job content is %s', { map { $_ => $job->{$_} } qw(data id) });
         $f->on_done(sub {
             my ($rslt) = @_;
@@ -92,37 +91,23 @@ async sub on_job_received {
                 try {
                     delete $self->{pending_jobs}{$id};
                     $log->tracef('Removing job from processing queue');
-
-                    my @tasks = ( 
-                        $tx->lrem(
-                            $self->prefixed_queue($self->processing_queue) => 1,
-                            $id
-                        ),
-                    );
-
-                    if ($job->data('_expires') && ($job->data('_expires') <= Time::HiRes::time())){
-                        # job is already expired on client side. So no one is waiting for the response.
-                        push @tasks, $tx->del('job::' . $id)
-                    }
-                    else {
-                        push @tasks, 
-                            (
-                			    $tx->hmset(
-                                    'job::' . $id,
-                                    _processed => Time::HiRes::time(),
-                                    result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt
-                                ),
-                                $tx->publish('client::' . $data{_reply_to}, $id),
-                    		);
-                    };
-
                     return Future->needs_all(
                         map {
                             $_->on_ready(sub {
                                 my $f = shift;
                                 $log->tracef('ready for %s - %s', $f->label, $f->state);
                             });
-                        } @tasks
+                        }
+                        $tx->hmset(
+                            'job::' . $id,
+                            _processed => Time::HiRes::time(),
+                            result => ref($rslt) ? 'J' . encode_json_utf8($rslt) : 'T' . $rslt
+                        ),
+                        $tx->publish('client::' . $data{_reply_to}, $id),
+                        $tx->lrem(
+                            $self->prefixed_queue($self->processing_queue) => 1,
+                            $id
+                        ),
                     )
                 } catch {
                     $log->errorf("Failed due to %s", $@);
@@ -137,7 +122,6 @@ async sub on_job_received {
               ->retain;
         });
         $f->on_ready($self->curry::weak::trigger);
-
         if(my $timeout = $self->timeout) {
             Future->needs_any(
                 $f,
@@ -297,7 +281,6 @@ Number of jobs to process in parallel. Defaults to 1.
 
 sub max_concurrent_jobs { shift->{max_concurrent_jobs} //= 1 }
 
-
 =head2 job_poll_interval
 
 Polling interval (e.g. for C<BRPOPLPUSH> in C<reliable> mode), in seconds.
@@ -336,3 +319,4 @@ Tom Molesworth <TEAM@cpan.org>
 =head1 LICENSE
 
 Copyright Tom Molesworth 2016-2019. Licensed under the same terms as Perl itself.
+

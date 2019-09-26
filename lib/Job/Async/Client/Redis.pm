@@ -168,7 +168,6 @@ sub on_subscribed {
 
 sub submit {
     my $self = shift;
-    my $expires;
 
     return Future->fail('Failed to submit a job. Queue client is not started yet.') unless $self->startup_future;
 
@@ -178,7 +177,6 @@ sub submit {
         ? shift
         : do {
             my %data = @_;
-            $expires = delete $data{expires};
             Job::Async::Job->new(
                 future => $self->loop->new_future,
                 id => Job::Async::Utils::uuid(),
@@ -195,7 +193,6 @@ sub submit {
                 'job::' . $id,
                 _reply_to => $self->id,
                 _queued    => Time::HiRes::time(),
-                $expires? (_expires   => $expires): (),
                 %{ $job->flattened_data }
             ),
             $tx->lpush($self->prefixed_queue($self->queue), $id)
