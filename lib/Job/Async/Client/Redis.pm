@@ -79,7 +79,7 @@ sub ryu { shift->{ryu} }
 
 sub prefix { shift->{prefix} //= 'jobs' }
 
-sub reconnect_delay { return 1 }; #TODO: make it configurable
+sub reconnect_delay { shift->{reconnect_delay} //= 1 }
 
 sub startup_future { return shift->{startup_future} };
 
@@ -230,7 +230,7 @@ sub pending_job {
 
 sub configure {
     my ($self, %args) = @_;
-    for (qw(queue uri use_multi prefix)) {
+    for (qw(queue uri use_multi prefix reconnect_delay)) {
         $self->{$_} = delete $args{$_} if exists $args{$_};
     }
     $self->next::method(%args)
