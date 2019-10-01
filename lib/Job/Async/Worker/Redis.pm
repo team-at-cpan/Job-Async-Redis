@@ -28,6 +28,8 @@ use Log::Any qw($log);
 
 use Net::Async::Redis;
 
+use constant RECONNET_COOLDOWN => 1;
+
 =head2 incoming_job
 
 Source for jobs received from the C<< BRPOP(LPUSH) >> queue wait.
@@ -116,8 +118,7 @@ async sub on_job_received {
                 $self->use_multi
                 ? $self->redis->multi($code)
                 : $code->($self->redis)
-            )->on_ready($self->curry::weak::trigger)
-              ->on_fail(sub { $log->errorf('Failed to update Redis status for job %s - %s', $id, shift); })
+            )->on_fail(sub { $log->errorf('Failed to update Redis status for job %s - %s', $id, shift); })
               ->retain;
         });
         $f->on_ready($self->curry::weak::trigger);
@@ -237,10 +238,10 @@ sub trigger {
             $log->debugf('Awaiting job on %s', $queue);
             Future->wait_any(
                 # If this is cancelled, we don't retrigger. Failure or success should retrigger as usual.
-                $self->queue_redis->brpoplpush(
+                $self->queue_redis->connect->then( sub { $self->queue_redis->brpoplpush(
                     $self->prefixed_queue($queue) => $self->prefixed_queue($self->processing_queue),
                     $self->job_poll_interval
-                )->on_done(sub {
+                )})->on_done(sub {
                     my ($id, $queue, @details) = @_;
                     try {
                         $log->tracef('And we have an event on %s', $queue);
@@ -257,7 +258,9 @@ sub trigger {
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
-                    $self->loop->later($self->curry::weak::trigger) unless $self->stopping_future->is_ready;
+                    $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
+                        $self->loop->later($self->curry::weak::trigger);
+                    })->retain unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
             )->on_ready(sub {

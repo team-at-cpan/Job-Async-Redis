@@ -79,6 +79,10 @@ sub ryu { shift->{ryu} }
 
 sub prefix { shift->{prefix} //= 'jobs' }
 
+sub reconnect_delay { return 1 }; #TODO: make it configurable
+
+sub startup_future { return shift->{startup_future} };
+
 sub prefixed_queue {
     my ($self, $q) = @_;
     return $q unless length(my $prefix = $self->prefix);
@@ -92,26 +96,37 @@ sub queue { shift->{queue} //= 'pending' }
 
 sub start {
     my ($self) = @_;
+    $self->{startup_future} = $self->loop->new_future;
     local $log->{context}{client_id} = $self->id;
     try {
         $log->tracef("Client awaiting Redis connections via %s", '' . $self->uri);
-        return Future->wait_all(
+        Future->wait_all(
             $self->client->connect,
             $self->submitter->connect,
             $self->subscriber->connect
         )->then(sub {
             local $log->{context}{client_id} = $self->id;
             $log->tracef("Subscribing to notifications");
+
             return $self->subscriber
                 ->subscribe('client::' . $self->id)
-                ->on_done(
-                    $self->curry::weak::on_subscribed
-                );
-        })
+                ->then(sub {
+                    return $self->on_subscribed(@_);
+                })->else(sub {
+                    return Future->fail('Redis subscription failed');
+                });
+        })->else(sub {
+            my $error = shift;
+            delete $self->{startup_future}  unless $self->{startup_future}->is_ready;
+            $log->warnf("Queue client was failed with: %s. It will restart after %d seconds", $error, $self->reconnect_delay);
+            return $self->loop->delay_future(after => $self->reconnect_delay)->then($self->curry::weak::start);
+        })->retain();
     } catch {
         $log->errorf('Failed on connection setup - %s', $@);
         die $@;
     }
+
+    return $self->{startup_future};
 }
 
 =head2 on_subscribed
@@ -121,9 +136,11 @@ sub start {
 sub on_subscribed {
     my ($self, $sub) = @_;
     local $log->{context}{client_id} = $self->id;
+    $log->tracef("Redis connections established, starting client operations");
+    $self->{startup_future}->done;
     # Every time someone tells us they finished a job, we pull back the details
     # and check the results
-    $sub->events
+    return $sub->events
         ->map('payload')
         ->each(sub {
             my ($id) = @_;
@@ -146,26 +163,31 @@ sub on_subscribed {
                 local @{$log->{context}}{qw(client_id job_id)} = ($self->id, $id);
                 $log
             })->retain;
-        });
-
-    $log->tracef("Redis connections established, starting client operations");
+        })->completed;
 }
 
 sub submit {
     my $self = shift;
+
+    return Future->fail('Failed to submit a job. Queue client is not started yet.') unless $self->startup_future;
+
+    return Future->fail('Failed to submit a job. Waiting for queue client to startup.') if $self->startup_future->is_failed or $self->startup_future->is_cancelled;
+
     my $job = (@_ == 1)
         ? shift
         : do {
+            my %data = @_;
             Job::Async::Job->new(
                 future => $self->loop->new_future,
                 id => Job::Async::Utils::uuid(),
-                data => { @_ },
+                data => \%data,
             );
         };
     $self->{pending_job}{$job->id} = $job;
     my $code = sub {
         my $tx = shift;
         my $id = $job->id // die 'no job ID?';
+
         return Future->needs_all(
             $tx->hmset(
                 'job::' . $id,
@@ -183,12 +205,12 @@ sub submit {
                 })
         );
     };
-    return (
+    return $self->submitter->connect->then(sub {
         $self->use_multi
         ? $self->submitter->multi($code)
         : $code->($self->submitter)
-    )->then(sub { $job->future })
-     ->retain
+    })->then(sub { $job->future })
+     ->retain;
 }
 
 sub queue_length {
