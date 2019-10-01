@@ -79,7 +79,7 @@ sub ryu { shift->{ryu} }
 
 sub prefix { shift->{prefix} //= 'jobs' }
 
-sub reconnect_delay { return 1 }; #TODO: make it configurable
+sub reconnect_delay { shift->{reconnect_delay} //= 1 }
 
 sub startup_future { return shift->{startup_future} };
 
@@ -117,10 +117,10 @@ sub start {
                 });
         })->else(sub {
             my $error = shift;
-            delete $self->{startup_future}  unless $self->{startup_future}->is_ready;
+            delete $self->{startup_future} unless $self->{startup_future}->is_ready;
             $log->warnf("Queue client was failed with: %s. It will restart after %d seconds", $error, $self->reconnect_delay);
             return $self->loop->delay_future(after => $self->reconnect_delay)->then($self->curry::weak::start);
-        })->retain();
+        })->retain;
     } catch {
         $log->errorf('Failed on connection setup - %s', $@);
         die $@;
@@ -230,7 +230,7 @@ sub pending_job {
 
 sub configure {
     my ($self, %args) = @_;
-    for (qw(queue uri use_multi prefix)) {
+    for (qw(queue uri use_multi prefix reconnect_delay)) {
         $self->{$_} = delete $args{$_} if exists $args{$_};
     }
     $self->next::method(%args)

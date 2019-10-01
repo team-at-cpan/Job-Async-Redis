@@ -46,6 +46,8 @@ workers using different modes. If it works, don't rely on it.
 
 =head2 Operational modes
 
+The default mode is C<reliable>.
+
 =head3 simple
 
 Jobs are submitted by serialising as JSON and pushing to a Redis list

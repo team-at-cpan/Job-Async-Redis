@@ -257,6 +257,9 @@ sub trigger {
                 })->on_fail(sub {
                     my $failure = shift;
                     $log->errorf("Failed to retrieve job from redis: %s", $failure);
+                    $self->loop->delay_future( after => RECONNET_COOLDOWN )->then(sub {
+                        $self->loop->later($self->curry::weak::trigger);
+                    })->retain unless $self->stopping_future->is_ready;
                 }),
                 $self->stopping_future->without_cancel
             )->on_ready(sub {
