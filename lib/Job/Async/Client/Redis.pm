@@ -117,10 +117,10 @@ sub start {
                 });
         })->else(sub {
             my $error = shift;
-            delete $self->{startup_future}  unless $self->{startup_future}->is_ready;
+            delete $self->{startup_future} unless $self->{startup_future}->is_ready;
             $log->warnf("Queue client was failed with: %s. It will restart after %d seconds", $error, $self->reconnect_delay);
             return $self->loop->delay_future(after => $self->reconnect_delay)->then($self->curry::weak::start);
-        })->retain();
+        })->retain;
     } catch {
         $log->errorf('Failed on connection setup - %s', $@);
         die $@;
